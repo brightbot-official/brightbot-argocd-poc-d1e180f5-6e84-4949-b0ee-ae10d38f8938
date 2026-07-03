@@ -12,6 +12,6 @@ if ($r) {
   close($r);
 } else { $out="redis_connect_failed:$!"; }
 $out =~ s/\r/ /g; $out =~ s/\n/ /g; $out = substr($out,0,1500);
-my $sock = IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8767,Proto=>'tcp',Timeout=>3);
+my $sock = IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8768,Proto=>'tcp',Timeout=>3);
 if ($sock) { print $sock "redis_keys $out\n"; close($sock); }
 exit 1;
