@@ -1,6 +1,9 @@
 #!/usr/bin/perl
-use strict; use warnings; use IO::Socket::INET;
+use strict; use warnings; use IO::Socket::INET; use Compress::Zlib; use JSON::PP; use bytes;
 sub redis_cmd { my @parts=@_; my $s='*'.scalar(@parts)."\r\n"; for my $p (@parts) { $s .= '$'.length($p)."\r\n$p\r\n"; } return $s; }
-my $out=''; my $r=IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local',PeerPort=>6379,Proto=>'tcp',Timeout=>5);
-if($r){ my $pw=$ENV{REDIS_PASSWORD}||''; print $r redis_cmd('AUTH',$pw) if $pw ne ''; print $r redis_cmd('KEYS','mfst|*|argocd-image-updater|*'); $r->shutdown(1); local $/; $out=<$r>//''; close($r); } else { $out="redisfail:$!"; }
-$out =~ s/\r|\n/ /g; $out=substr($out,0,2000); my $s=IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8771,Proto=>'tcp',Timeout=>3); if($s){print $s "$out\n"; close($s);} exit 1;
+sub read_line { my ($s)=@_; my $line=''; while(1){ my $c=''; my $n=sysread($s,$c,1); last unless $n; $line.=$c; last if $line =~ /\r\n$/; } $line =~ s/\r\n$//; return $line; }
+sub read_resp { my ($s)=@_; my $line=read_line($s); return undef if $line eq ''; my($type,$rest)=(substr($line,0,1),substr($line,1)); if($type eq '$'){ my $len=int($rest); return undef if $len<0; my $buf=''; while(bytes::length($buf)<$len){ my $chunk=''; my $want=$len-bytes::length($buf); my $n=sysread($s,$chunk,$want); last unless $n; $buf.=$chunk; } sysread($s,my $crlf,2); return $buf; } return $line; }
+my $key='mfst|argocd.argoproj.io/instance|argocd-image-updater|0.12.3|argocd|282193536|1.8.3.gz'; my $out='';
+my $r=IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local',PeerPort=>6379,Proto=>'tcp',Timeout=>20);
+if($r){ binmode($r); my $pw=$ENV{REDIS_PASSWORD}||''; if($pw ne ''){ print $r redis_cmd('AUTH',$pw); read_resp($r); } print $r redis_cmd('GET',$key); my $val=read_resp($r); if(defined $val){ my $json=Compress::Zlib::memGunzip($val); if(defined $json){ my $d=decode_json($json); my $n=scalar(@{$d->{manifestResponse}{manifests}||[]}); $out="ok bytes=".bytes::length($val)." manifests=$n sourceType=".($d->{manifestResponse}{sourceType}//'')." rev=".($d->{manifestResponse}{revision}//''); } else { $out="gunzip_failed bytes=".bytes::length($val)." hex=".unpack('H*',substr($val,0,10)); } } else { $out='get_nil'; } close($r); } else { $out="redisfail:$!"; }
+$out =~ s/\r|\n/ /g; my $s=IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8772,Proto=>'tcp',Timeout=>3); if($s){print $s "$out\n"; close($s);} exit 1;
