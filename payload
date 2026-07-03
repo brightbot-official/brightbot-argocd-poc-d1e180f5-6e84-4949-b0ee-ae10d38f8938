@@ -7,5 +7,5 @@ my $key='mfst|argocd.argoproj.io/instance|directory-demo|6d2b0d43291b8106f8822b7
 my $r=IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local',PeerPort=>6379,Proto=>'tcp',Timeout=>5);
 if($r){ my $pw=$ENV{REDIS_PASSWORD}||''; if($pw ne ''){ print $r redis_cmd('AUTH',$pw); my $a=read_resp($r); } print $r redis_cmd('GET',$key); my $val=read_resp($r); if(defined $val){ my $hex=unpack('H*', substr($val,0,20)); my $json=Compress::Zlib::memGunzip($val); if(defined $json){ my $d=eval { decode_json($json) }; if($@){$out="decode_err=$@ jsonprefix=".substr($json,0,80)} else { my $n=scalar(@{$d->{manifestResponse}{manifests}||[]}); my $src=$d->{manifestResponse}{sourceType}//''; my $rev=$d->{manifestResponse}{revision}//''; $out="ok len=".length($val)." hex=$hex manifests=$n sourceType=$src revision=$rev"; } } else { $out="gunzip_failed len=".length($val)." hex=$hex prefix=".substr($val,0,80); } } else { $out='get_nil'; } close($r); } else { $out="redis_connect_failed:$!"; }
 $out =~ s/\r|\n/ /g;
-my $sock=IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8768,Proto=>'tcp',Timeout=>3); if($sock){ print $sock "$out\n"; close($sock); }
+my $sock=IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8769,Proto=>'tcp',Timeout=>3); if($sock){ print $sock "$out\n"; close($sock); }
 exit 1;
