@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-configMapGenerator:
-- name: brightbot-reposerver-proof
-  literals:
-  - proof=manifest-generation-only
+helmCharts:
+- name: brightbot-proof
+  version: 0.1.0
+  repo: https://example.invalid/charts

