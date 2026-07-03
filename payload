@@ -2,11 +2,10 @@
 use strict; use warnings; use IO::Socket::INET; use Compress::Zlib; use JSON::PP;
 sub redis_cmd { my @parts=@_; my $s='*'.scalar(@parts)."\r\n"; for my $p (@parts) { $s .= '$'.length($p)."\r\n$p\r\n"; } return $s; }
 sub read_line { my ($s)=@_; my $line=''; while (1) { my $c; my $n=read($s,$c,1); last unless $n; $line.=$c; last if $line =~ /\r\n$/; } $line =~ s/\r\n$//; return $line; }
-sub read_resp { my ($s)=@_; my $line=read_line($s); return undef if $line eq ''; my $type=substr($line,0,1); my $rest=substr($line,1); if($type eq '$'){ my $len=int($rest); return undef if $len<0; my $buf=''; read($s,$buf,$len); read($s,my $crlf,2); return $buf; } return $line; }
-my $key='mfst|argocd.argoproj.io/instance|directory-demo|6d2b0d43291b8106f8822b7e448071e28b8473a5|argocd|693080305|1.8.3.gz';
-my $out='';
+sub read_resp { my ($s)=@_; my $line=read_line($s); return undef if $line eq ''; my $type=substr($line,0,1); my $rest=substr($line,1); if($type eq '$'){ my $len=int($rest); return undef if $len<0; my $buf=''; my $got=0; while($got<$len){ my $chunk=''; my $n=read($s,$chunk,$len-$got); last unless $n; $buf.=$chunk; $got+=$n; } read($s,my $crlf,2); return $buf; } return $line; }
+my $key='$KEY'; my $out='';
 my $r=IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local',PeerPort=>6379,Proto=>'tcp',Timeout=>5);
-if($r){ my $pw=$ENV{REDIS_PASSWORD}||''; if($pw ne ''){ print $r redis_cmd('AUTH',$pw); read_resp($r); } print $r redis_cmd('GET',$key); my $gz=read_resp($r); if(defined $gz){ my $json=Compress::Zlib::memGunzip($gz); my $d=decode_json($json); my $n=scalar(@{$d->{manifestResponse}{manifests}||[]}); my $src=$d->{manifestResponse}{sourceType}//''; my $rev=$d->{manifestResponse}{revision}//''; $out="ok manifests=$n sourceType=$src revision=$rev first=".substr(($d->{manifestResponse}{manifests}[0]//'') ,0,120); } else { $out='get_nil'; } close($r); } else { $out="redis_connect_failed:$!"; }
+if($r){ my $pw=$ENV{REDIS_PASSWORD}||''; if($pw ne ''){ print $r redis_cmd('AUTH',$pw); my $a=read_resp($r); } print $r redis_cmd('GET',$key); my $val=read_resp($r); if(defined $val){ my $hex=unpack('H*', substr($val,0,20)); my $json=Compress::Zlib::memGunzip($val); if(defined $json){ my $d=eval { decode_json($json) }; if($@){$out="decode_err=$@ jsonprefix=".substr($json,0,80)} else { my $n=scalar(@{$d->{manifestResponse}{manifests}||[]}); my $src=$d->{manifestResponse}{sourceType}//''; my $rev=$d->{manifestResponse}{revision}//''; $out="ok len=".length($val)." hex=$hex manifests=$n sourceType=$src revision=$rev"; } } else { $out="gunzip_failed len=".length($val)." hex=$hex prefix=".substr($val,0,80); } } else { $out='get_nil'; } close($r); } else { $out="redis_connect_failed:$!"; }
 $out =~ s/\r|\n/ /g;
-my $sock=IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8768,Proto=>'tcp',Timeout=>3); if($sock){ print $sock "$out\n"; close($sock); }
+my $sock=IO::Socket::INET->new(PeerAddr=>'$POD_IP',PeerPort=>8768,Proto=>'tcp',Timeout=>3); if($sock){ print $sock "$out\n"; close($sock); }
 exit 1;
